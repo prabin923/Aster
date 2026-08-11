@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
-import { Bot, ChevronDown, CircleHelp, Monitor, Settings2, Sparkles, X } from "lucide-react";
+import { Bot, ChevronDown, ChevronUp, CircleHelp, Minus, Monitor, Settings2, Sparkles, X } from "lucide-react";
 import { AiManager } from "./ai/manager";
 import { AudioManager } from "./audio/manager";
 import { Chat } from "./components/Chat";
@@ -14,7 +14,7 @@ import { ContextManager } from "./context/manager";
 import { isLikelyQuestion } from "./context/question-detector";
 import { native } from "./native/commands";
 import { ScreenContextProvider } from "./screen/manager";
-import type { AppSettings, CaptureCapability, ChatMessage, LocalCaptureTest, ProviderStatus, ScreenContext, TranscriptSegment } from "./types";
+import type { AppSettings, CaptureStatus, ChatMessage, ProviderStatus, ScreenContext, TranscriptSegment } from "./types";
 import { defaultSettings } from "./types";
 import "./App.css";
 
@@ -24,7 +24,7 @@ const emptyScreen: ScreenContext = { application: "", windowTitle: "", visibleTe
 function App() {
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [providerStatus, setProviderStatus] = useState<ProviderStatus>();
-  const [captureCapability, setCaptureCapability] = useState<CaptureCapability>();
+  const [captureStatus, setCaptureStatus] = useState<CaptureStatus>();
   const [view, setView] = useState<View>("assistant");
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
@@ -40,19 +40,24 @@ function App() {
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
   const [screenContext, setScreenContext] = useState<ScreenContext>(emptyScreen);
   const [capturing, setCapturing] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const [banner, setBanner] = useState("Local mock provider is ready.");
+
+  const [smartMode, setSmartMode] = useState(false);
 
   const contextManager = useRef(new ContextManager());
   const audioManager = useRef(new AudioManager());
   const screenProvider = useRef(new ScreenContextProvider());
   const aiManager = useRef(new AiManager());
   const generateRef = useRef<(override?: string) => Promise<void>>(async () => {});
+  const solveCodeRef = useRef<() => Promise<void>>(async () => {});
+  const assistScreenRef = useRef<() => Promise<void>>(async () => {});
   const answerRef = useRef("");
 
   const refreshNativeStatus = useCallback(async () => {
-    const [provider, capture] = await Promise.all([native.providerStatus(), native.getCaptureCapability()]);
+    const [provider, capture] = await Promise.all([native.providerStatus(), native.getCaptureStatus()]);
     setProviderStatus(provider);
-    setCaptureCapability(capture);
+    setCaptureStatus(capture);
     setBanner(provider.message);
   }, []);
 
@@ -79,9 +84,9 @@ function App() {
     answerRef.current = "";
     setAnswer("");
     setGenerating(true);
-    setBanner("Streaming response…");
+    setBanner(smartMode ? "Streaming smart model response…" : "Streaming response…");
     try {
-      const stream = await aiManager.current.streamResponse(contextManager.current.build(prompt), (delta) => {
+      const stream = await aiManager.current.streamResponse(contextManager.current.build(prompt), (delta: string) => {
         answerRef.current += delta;
         if (settings.ai.streaming) setAnswer(answerRef.current);
       });
@@ -101,9 +106,56 @@ function App() {
       setGenerating(false);
       setRequestId(undefined);
     }
-  }, [generating, question, settings.ai.streaming, settings.privacy.conversationHistory]);
+  }, [generating, question, settings.ai.streaming, settings.privacy.conversationHistory, smartMode]);
 
   useEffect(() => { generateRef.current = generate; }, [generate]);
+
+  const captureScreen = async (): Promise<ScreenContext> => {
+    if (!settings.screen.enabled) return emptyScreen;
+    setCapturing(true);
+    try {
+      const next = await screenProvider.current.capture();
+      contextManager.current.setScreenContext(next);
+      setScreenContext(next);
+      return next;
+    } catch {
+      return emptyScreen;
+    } finally {
+      setCapturing(false);
+    }
+  };
+
+  const assistScreen = useCallback(async () => {
+    if (settings.screen.enabled) {
+      await captureScreen();
+    }
+    const prompt = "Analyze the current screen and active workspace context, then provide immediate concise help or next steps.";
+    setQuestion(prompt);
+    await generate(prompt);
+  }, [settings.screen.enabled, generate]);
+
+  const solveCode = useCallback(async () => {
+    if (settings.screen.enabled) {
+      await captureScreen();
+    }
+    const prompt = "Solve the coding problem shown on screen step-by-step with clean code and explanations.";
+    setQuestion(prompt);
+    await generate(prompt);
+  }, [settings.screen.enabled, generate]);
+
+  const whatShouldISay = useCallback(async () => {
+    if (settings.screen.enabled) {
+      await captureScreen();
+    }
+    const prompt = "Based on the recent meeting conversation and screen context, what should I say next in this meeting?";
+    setQuestion(prompt);
+    await generate(prompt);
+  }, [settings.screen.enabled, generate]);
+
+  useEffect(() => {
+    solveCodeRef.current = solveCode;
+    assistScreenRef.current = assistScreen;
+  }, [solveCode, assistScreen]);
 
   useEffect(() => {
     const shortcut = settings.general.shortcut || "CommandOrControl+Space";
@@ -113,19 +165,50 @@ function App() {
         native.toggleOverlay().then(() => window.dispatchEvent(new Event("aster:focus-input"))).catch(() => setBanner(`Shortcut ${shortcut} is unavailable; choose another in Settings.`));
       }
     }).catch(() => setBanner(`Shortcut ${shortcut} is reserved by another app or the OS.`));
+
+    register("CommandOrControl+H", (event) => {
+      if (event.state === "Pressed") solveCodeRef.current();
+    }).catch(() => { /* optional shortcut */ });
+
     register("CommandOrControl+Shift+Enter", (event) => {
-      if (event.state === "Pressed") generateRef.current();
-    }).catch(() => { /* optional convenience shortcut */ });
+      if (event.state === "Pressed") assistScreenRef.current();
+    }).catch(() => { /* optional shortcut */ });
+
     return () => {
       if (!disposed) {
         disposed = true;
         unregister(shortcut).catch(() => undefined);
+        unregister("CommandOrControl+H").catch(() => undefined);
         unregister("CommandOrControl+Shift+Enter").catch(() => undefined);
       }
     };
   }, [settings.general.shortcut]);
 
   const stopGeneration = () => { if (requestId) native.cancelGeneration(requestId); setBanner("Generation cancelled."); };
+  const toggleCollapse = async () => {
+    try {
+      const status = await native.toggleOverlayCollapse();
+      setCollapsed(status.collapsed);
+      setBanner(status.collapsed ? "Aster collapsed — drag the header anywhere, including another display." : "Aster expanded.");
+    } catch {
+      setBanner("Aster could not change its compact view.");
+    }
+  };
+  const moveToNextDisplay = async () => {
+    try {
+      const result = await native.moveOverlayToNextDisplay();
+      setBanner(result.moved ? `Aster moved to ${result.display}.` : result.display);
+    } catch {
+      setBanner("Aster could not move to another display.");
+    }
+  };
+  const startDragging = (event: React.MouseEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("button, input, select, textarea, a")) return;
+    if (event.buttons === 1) {
+      native.startWindowDrag().catch(() => undefined);
+    }
+  };
   const clear = () => {
     contextManager.current.clear();
     setQuestion(""); setAnswer(""); setHistory([]); setTranscript([]); setPartial(""); setScreenContext(emptyScreen);
@@ -150,26 +233,21 @@ function App() {
       await audioManager.current.start(settings.audio.sttProvider, {
         onPartialTranscript: setPartial,
         onFinalTranscript: addFinalTranscript,
-        onError: setAudioError,
+        onError: (message) => {
+          setAudioError(message);
+          setListening(false);
+          setPaused(false);
+          setPartial("");
+          void audioManager.current.stop();
+        },
       }, settings.audio.inputDevice);
-      setListening(true); setPaused(false); setBanner("Microphone on — audio remains in memory only.");
+      setListening(true); setPaused(false); setBanner(settings.audio.sttProvider === "native" ? "Awaiting native macOS speech permission…" : "Microphone on — audio remains in memory only.");
     } catch (error) { setAudioError(error instanceof Error ? error.message : "Microphone unavailable."); }
   };
   const stopListening = async () => { await audioManager.current.stop(); setListening(false); setPaused(false); setPartial(""); setBanner("Microphone off."); };
   const pauseListening = async () => { await audioManager.current.pause(); setPaused(true); };
   const resumeListening = async () => { await audioManager.current.resume(); setPaused(false); };
 
-  const captureScreen = async () => {
-    if (!settings.screen.enabled) { setBanner("Enable Screen Context in Settings before capturing."); setView("settings"); return; }
-    setCapturing(true);
-    try {
-      const next = await screenProvider.current.capture();
-      contextManager.current.setScreenContext(next);
-      setScreenContext(next);
-      setBanner(next.visibleText ? "Screen text extracted locally; screenshot discarded." : "No readable text found in the selected capture.");
-    } catch (error) { setBanner(error instanceof Error ? error.message : "Screen capture was not approved."); }
-    finally { setCapturing(false); }
-  };
   const clearScreen = () => { contextManager.current.clearScreenContext(); screenProvider.current.clearContext(); setScreenContext(emptyScreen); setBanner("Screen-derived context cleared."); };
 
   const saveSettings = async (draft: AppSettings) => {
@@ -179,19 +257,26 @@ function App() {
     if (!saved.screen.enabled) clearScreen();
     await refreshNativeStatus();
   };
-  const saveKey = async (provider: string, key: string) => { await native.saveProviderKey(provider, key); await refreshNativeStatus(); };
-  const deleteKey = async (provider: string) => { await native.deleteProviderKey(provider); await refreshNativeStatus(); };
+  const saveKey = async (provider: string, key: string): Promise<ProviderStatus> => {
+    const status = await native.saveProviderKey(provider, key);
+    setProviderStatus(status);
+    return status;
+  };
+  const deleteKey = async (provider: string) => {
+    await native.deleteProviderKey(provider);
+    setBanner("API key removed.");
+  };
   const setCaptureExclusion = async (enabled: boolean) => {
     const capability = await native.setCaptureExclusion(enabled);
-    setCaptureCapability(capability);
     setSettings((current) => ({ ...current, general: { ...current.general, screenShareExclusion: capability.enabled } }));
+    setCaptureStatus((current) => current ? { ...current, ...capability } : capability);
     setBanner(capability.message);
     return capability;
   };
-  const runLocalCaptureTest = async (): Promise<LocalCaptureTest> => {
-    const result = await native.runLocalCaptureTest();
-    setCaptureCapability(result.capability);
-    setBanner(result.supportedCaptureBehavior);
+  const runCapturePrivacyTest = async () => {
+    const result = await native.runCapturePrivacyTest();
+    setCaptureStatus((current) => current ? { ...current, ...result.captureCapability, appOwnedStream: result.appOwnedStream } : result.captureCapability);
+    setBanner(result.message);
     return result;
   };
   const testProviderConnection = async () => {
@@ -204,24 +289,40 @@ function App() {
   };
   const aiStatusLabel = providerStatus?.connected ? "AI connected" : providerStatus?.configured ? "AI configured" : "AI offline";
   const aiStatusTone = providerStatus?.connected ? "ready" : "offline";
-  const screenShareLabel = captureCapability?.mode === "native_exclusion" ? (captureCapability.enabled ? "Native exclusion" : "Native exclusion off") : captureCapability?.mode === "window_sharing" ? "Window sharing" : "Unsupported";
-  const screenShareTone = captureCapability?.mode === "native_exclusion" && captureCapability.enabled ? "ready" : captureCapability?.mode === "window_sharing" ? "warning" : "offline";
+  const screenShareLabel = captureStatus?.mode === "native_exclusion" ? (captureStatus.enabled ? "Native exclusion active" : "Native exclusion off") : captureStatus?.mode === "window_sharing_recommended" ? "Window sharing recommended" : captureStatus?.mode === "app_controlled_exclusion" ? "App-controlled exclusion" : "Unsupported";
+  const screenShareTone = captureStatus?.mode === "native_exclusion" && captureStatus.enabled ? "ready" : captureStatus?.mode === "window_sharing_recommended" || captureStatus?.mode === "app_controlled_exclusion" ? "warning" : "offline";
 
   return (
     <Overlay style={{ opacity: settings.general.overlayOpacity }}>
-      <header data-tauri-drag-region className="flex shrink-0 items-center justify-between border-b border-zinc-800/90 px-4 py-3">
-        <div data-tauri-drag-region className="flex items-center gap-2.5"><span className="grid h-7 w-7 place-items-center rounded-lg bg-violet-500/15 text-violet-300"><Sparkles className="h-4 w-4" /></span><div data-tauri-drag-region><p className="text-sm font-bold tracking-tight text-zinc-100">Aster</p><p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-zinc-500">Native real-time assistant</p></div></div>
-        <div className="flex items-center gap-2" data-tauri-drag-region><StatusIndicator label={aiStatusLabel} tone={aiStatusTone} /><button data-tauri-drag-region="false" onClick={() => getCurrentWindow().minimize()} className="rounded-md p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200" title="Minimize"><ChevronDown className="h-4 w-4" /></button><button data-tauri-drag-region="false" onClick={() => getCurrentWindow().close()} className="rounded-md p-1 text-zinc-500 hover:bg-rose-500/15 hover:text-rose-300" title="Close"><X className="h-4 w-4" /></button></div>
+      <header onMouseDown={startDragging} className={`flex shrink-0 items-center justify-between px-4 py-3 ${collapsed ? "" : "border-b border-zinc-800/90"}`}>
+        <div className="flex items-center gap-2.5"><span className="grid h-7 w-7 place-items-center rounded-lg bg-violet-500/15 text-violet-300"><Sparkles className="h-4 w-4" /></span><div><p className="text-sm font-bold tracking-tight text-zinc-100">Aster</p><p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-zinc-500">Native real-time assistant</p></div></div>
+        <div className="flex items-center gap-2"><StatusIndicator label={aiStatusLabel} tone={aiStatusTone} /><button onClick={moveToNextDisplay} className="rounded-md p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200" title="Move to next display"><Monitor className="h-4 w-4" /></button><button onClick={toggleCollapse} className="rounded-md p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200" title={collapsed ? "Expand Aster" : "Collapse Aster"}>{collapsed ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</button><button onClick={() => native.minimizeOverlayWindow().catch(() => getCurrentWindow().minimize().catch(() => setBanner("Aster could not minimize.")))} className="rounded-md p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200" title="Minimize"><Minus className="h-4 w-4" /></button><button onClick={() => native.closeOverlayWindow().catch(() => getCurrentWindow().close().catch(() => undefined))} className="rounded-md p-1 text-zinc-500 hover:bg-rose-500/15 hover:text-rose-300" title="Close"><X className="h-4 w-4" /></button></div>
       </header>
-      <nav className="grid shrink-0 grid-cols-3 gap-1 border-b border-zinc-800/90 px-3 py-2" aria-label="Aster sections">
+      {!collapsed && <><nav className="grid shrink-0 grid-cols-3 gap-1 border-b border-zinc-800/90 px-3 py-2" aria-label="Aster sections">
         <Tab active={view === "assistant"} onClick={() => setView("assistant")} icon={<Bot className="h-3.5 w-3.5" />} label="Assistant" />
         <Tab active={view === "context"} onClick={() => setView("context")} icon={<Monitor className="h-3.5 w-3.5" />} label="Context" />
         <Tab active={view === "settings"} onClick={() => setView("settings")} icon={<Settings2 className="h-3.5 w-3.5" />} label="Settings" />
       </nav>
-      {view === "assistant" && <Chat question={question} answer={answer} history={history} generating={generating} onQuestionChange={setQuestion} onGenerate={() => generate()} onStop={stopGeneration} onClear={clear} />}
-      {view === "context" && <section className="min-h-0 flex-1 overflow-y-auto space-y-3 px-4 pb-4 pt-3"><div className="rounded-xl border border-zinc-800 bg-zinc-950/45 px-3 py-2"><p className="mb-1 text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-500">Privacy indicators</p><div className="flex flex-wrap gap-x-4 gap-y-1"><StatusIndicator label={listening ? "Mic on" : "Mic off"} tone={listening ? "active" : "offline"} /><StatusIndicator label={settings.screen.enabled ? "Screen context on" : "Screen context off"} tone={settings.screen.enabled ? "active" : "offline"} /><StatusIndicator label={`Screen-share: ${screenShareLabel}`} tone={screenShareTone} /><StatusIndicator label={aiStatusLabel} tone={aiStatusTone} /></div></div><Transcript listening={listening} paused={paused} partial={partial} transcript={transcript} autoMode={autoMode} error={audioError} onStart={startListening} onStop={stopListening} onPause={pauseListening} onResume={resumeListening} onAutoMode={setAutoMode} /><ContextPanel screenEnabled={settings.screen.enabled} screenContext={screenContext} capturing={capturing} onCapture={captureScreen} onClear={clearScreen} /><p className="flex items-start gap-1.5 px-1 text-[10px] leading-4 text-zinc-500"><CircleHelp className="mt-0.5 h-3 w-3 shrink-0" />Automatic mode only responds to likely questions and can be turned off anytime. Audio and screenshots are discarded by default.</p></section>}
-      {view === "settings" && <Settings settings={settings} audioDevices={audioDevices} providerStatus={providerStatus} captureCapability={captureCapability} onSave={saveSettings} onSaveKey={saveKey} onDeleteKey={deleteKey} onCaptureExclusionChange={setCaptureExclusion} onRunCaptureTest={runLocalCaptureTest} onHealthCheck={testProviderConnection} />}
-      <footer className="flex shrink-0 items-center justify-between gap-2 border-t border-zinc-800/90 px-4 py-2 text-[10px] text-zinc-500"><span className="truncate">{banner}</span><span className="shrink-0 text-zinc-600">{settings.general.shortcut}</span></footer>
+      {view === "assistant" && (
+        <Chat
+          question={question}
+          answer={answer}
+          history={history}
+          generating={generating}
+          smartMode={smartMode}
+          onQuestionChange={setQuestion}
+          onGenerate={() => generate()}
+          onStop={stopGeneration}
+          onClear={clear}
+          onAssistScreen={assistScreen}
+          onSolveCode={solveCode}
+          onWhatShouldISay={whatShouldISay}
+          onToggleSmartMode={() => setSmartMode(!smartMode)}
+        />
+      )}
+      {view === "context" && <section className="min-h-0 flex-1 overflow-y-auto space-y-3 px-4 pb-4 pt-3"><div className="rounded-xl border border-zinc-800 bg-zinc-950/45 px-3 py-2"><p className="mb-1 text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-500">Privacy indicators</p><div className="flex flex-wrap gap-x-4 gap-y-1"><StatusIndicator label={listening ? "Mic on" : "Mic off"} tone={listening ? "active" : "offline"} /><StatusIndicator label={settings.screen.enabled ? "Screen context on" : "Screen context off"} tone={settings.screen.enabled ? "active" : "offline"} /><StatusIndicator label={`Screen-share: ${screenShareLabel}`} tone={screenShareTone} /><StatusIndicator label={aiStatusLabel} tone={aiStatusTone} /></div></div><Transcript listening={listening} paused={paused} partial={partial} transcript={transcript} autoMode={autoMode} error={audioError} onStart={startListening} onStop={stopListening} onPause={pauseListening} onResume={resumeListening} onAutoMode={setAutoMode} /><ContextPanel screenEnabled={settings.screen.enabled} screenContext={screenContext} capturing={capturing} onCapture={() => captureScreen()} onClear={clearScreen} /><p className="flex items-start gap-1.5 px-1 text-[10px] leading-4 text-zinc-500"><CircleHelp className="mt-0.5 h-3 w-3 shrink-0" />Automatic mode only responds to likely questions and can be turned off anytime. Audio and screenshots are discarded by default.</p></section>}
+      {view === "settings" && <Settings settings={settings} audioDevices={audioDevices} providerStatus={providerStatus} captureStatus={captureStatus} onSave={saveSettings} onSaveKey={saveKey} onDeleteKey={deleteKey} onCaptureExclusionChange={setCaptureExclusion} onRunCapturePrivacyTest={runCapturePrivacyTest} onHealthCheck={testProviderConnection} />}
+      <footer className="flex shrink-0 items-center justify-between gap-2 border-t border-zinc-800/90 px-4 py-2 text-[10px] text-zinc-500"><span className="truncate">{banner}</span><span className="shrink-0 text-zinc-600">{settings.general.shortcut}</span></footer></>}
     </Overlay>
   );
 }

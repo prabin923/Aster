@@ -1,4 +1,4 @@
-use super::CaptureMode;
+use super::{AppOwnedStreamStatus, CaptureMode, CaptureTestResult, PlatformDiagnostic};
 use tauri::WebviewWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowDisplayAffinity, SetWindowDisplayAffinity, WINDOW_DISPLAY_AFFINITY,
@@ -23,8 +23,11 @@ unsafe extern "system" {
 }
 
 pub fn name() -> &'static str { "Windows" }
-
 pub fn mode() -> CaptureMode { CaptureMode::NativeExclusion }
+pub fn requires_overlay_marker() -> bool { false }
+pub fn setup_window_behavior(_window: &WebviewWindow) {}
+pub fn follow_cursor_to_screen(_window: &WebviewWindow) -> bool { false }
+pub fn app_owned_stream_status() -> Option<AppOwnedStreamStatus> { None }
 
 fn build_number() -> Option<u32> {
     let mut version = RtlOsVersionInfoW { size: std::mem::size_of::<RtlOsVersionInfoW>() as u32, major: 0, minor: 0, build: 0, platform_id: 0, csd_version: [0; 128] };
@@ -60,8 +63,19 @@ pub fn set_capture_exclusion(window: &WebviewWindow, enabled: bool) -> Result<bo
     let affinity = if enabled { WDA_EXCLUDEFROMCAPTURE } else { WDA_NONE };
     unsafe { SetWindowDisplayAffinity(hwnd, affinity) }
         .map_err(|_| "Windows rejected the screen-share exclusion request for this overlay.".to_string())?;
-    let verified = is_enabled(window)?;
-    verify_requested_state(enabled, verified)
+    verify_requested_state(enabled, is_enabled(window)?)
+}
+
+pub fn run_diagnostic(window: Option<&WebviewWindow>, _marker_added: bool) -> PlatformDiagnostic {
+    let native_window_detected = window.is_some_and(|window| window.hwnd().is_ok());
+    if !is_capture_exclusion_supported() {
+        return PlatformDiagnostic { result: CaptureTestResult::NotApplicable, native_window_detected, app_owned_stream: None, message: capability_message() };
+    }
+    match window.and_then(|window| is_enabled(window).ok()) {
+        Some(true) => PlatformDiagnostic { result: CaptureTestResult::Pass, native_window_detected, app_owned_stream: None, message: "WDA_EXCLUDEFROMCAPTURE is active and verified on Aster's native HWND.".to_string() },
+        Some(false) => PlatformDiagnostic { result: CaptureTestResult::Fail, native_window_detected, app_owned_stream: None, message: "WDA_EXCLUDEFROMCAPTURE is not active for Aster's native HWND.".to_string() },
+        None => PlatformDiagnostic { result: CaptureTestResult::Fail, native_window_detected, app_owned_stream: None, message: "Windows could not read the display-affinity state for Aster's native HWND.".to_string() },
+    }
 }
 
 fn verify_requested_state(requested: bool, verified: bool) -> Result<bool, String> {
@@ -79,20 +93,11 @@ mod tests {
     use super::{mode, verify_requested_state, CaptureMode};
 
     #[test]
-    fn windows_uses_native_exclusion_mode() {
-        assert_eq!(mode(), CaptureMode::NativeExclusion);
-    }
-
+    fn windows_uses_native_exclusion_mode() { assert_eq!(mode(), CaptureMode::NativeExclusion); }
     #[test]
-    fn reports_success_only_after_windows_affinity_is_read_back() {
-        assert_eq!(verify_requested_state(true, true).unwrap(), true);
-    }
-
+    fn reports_success_only_after_windows_affinity_is_read_back() { assert_eq!(verify_requested_state(true, true).unwrap(), true); }
     #[test]
-    fn reports_disable_only_after_windows_affinity_is_cleared() {
-        assert_eq!(verify_requested_state(false, false).unwrap(), false);
-    }
-
+    fn reports_disable_only_after_windows_affinity_is_cleared() { assert_eq!(verify_requested_state(false, false).unwrap(), false); }
     #[test]
     fn reports_windows_api_or_read_back_failures_as_errors() {
         assert!(verify_requested_state(true, false).is_err());

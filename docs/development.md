@@ -25,10 +25,12 @@ Manual desktop smoke checks for each release:
 4. Confirm a cloud key is neither displayed nor written to settings JSON.
 5. Test denied/disconnected microphone and capture permissions.
 6. Enable screen context, choose a source, then clear it.
-7. Check Screen-share exclusion status. On unsupported macOS/Linux, verify the control is disabled and the unsupported message is visible while the local overlay remains visible.
-8. On Windows 10 version 2004+, enable exclusion, verify the native `GetWindowDisplayAffinity` read-back succeeds, then test both window capture and display capture in a supported sharing app. Confirm the overlay remains visible locally and is absent only from the supported capture path. Repeat with exclusion off to confirm normal inclusion.
+7. Open **Settings → Screen-share privacy** and run **Capture Privacy Test**. Confirm the overlay and native window are detected and that the UI's mode matches the returned native capability.
+8. On macOS 12.3+, grant Screen Recording permission if requested, then run the test. A pass means only that Aster's own ScreenCaptureKit stream received a frame with the excluded-overlay test marker absent. It must still show **Window sharing recommended** for third-party capture.
+9. On Windows 10 version 2004+, enable exclusion, verify the native `GetWindowDisplayAffinity` read-back succeeds, then test both window capture and display capture in a supported sharing app. Confirm the overlay remains visible locally and is absent only from the supported capture path. Repeat with exclusion off to confirm normal inclusion.
+10. On Linux, confirm the detected session/desktop reports **Unsupported** unless a documented desktop-specific implementation has been added.
 
-Automated coverage includes platform-default status and the Windows implementation verifies `GetWindowDisplayAffinity` immediately after applying `WDA_EXCLUDEFROMCAPTURE`. Windows capture-app tests require a Windows desktop runner because they exercise OS compositor behavior; macOS/Linux tests assert the honest unsupported state rather than simulating universal exclusion.
+Automated coverage includes platform-default status, invalid-state protection, and the Windows implementation's `GetWindowDisplayAffinity` read-back after applying `WDA_EXCLUDEFROMCAPTURE`. Windows capture-app tests require a Windows desktop runner because they exercise OS compositor behavior. The macOS test is intentionally a manual ScreenCaptureKit diagnostic of Aster's own stream, because it may require Screen Recording permission; it never simulates or controls third-party sharing.
 
 ## Packaging matrix
 

@@ -19,7 +19,7 @@ impl Default for AppSettings {
                 always_on_top: true,
                 position: "top-right".into(),
                 shortcut: "CommandOrControl+Space".into(),
-                screen_share_exclusion: crate::capture_exclusion::default_enabled(),
+                screen_share_exclusion: crate::capture_policy::default_enabled(),
             },
             audio: AudioSettings {
                 input_device: "default".into(),
@@ -135,5 +135,6 @@ pub struct ProviderStatus {
     pub provider: String,
     pub configured: bool,
     pub connected: bool,
+    pub credential_storage: String,
     pub message: String,
 }

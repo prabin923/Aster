@@ -14,10 +14,10 @@ describe("capture capability presentation", () => {
   });
 
   it("never exposes macOS window-sharing fallback as enabled", () => {
-    const poisonedCapability = { supported: false, mode: "window_sharing" as const, enabled: true, platform: "macOS", message: "guidance" };
+    const poisonedCapability = { supported: false, mode: "window_sharing_recommended" as const, enabled: true, platform: "macOS", message: "guidance" };
     expect(supportsNativeCaptureExclusion(poisonedCapability)).toBe(false);
     expect(safeCaptureCapability(poisonedCapability)?.enabled).toBe(false);
-    expect(captureModeLabel("window_sharing")).toBe("Window sharing");
+    expect(captureModeLabel("window_sharing_recommended")).toBe("Window sharing recommended");
   });
 
   it("never exposes an unsupported environment as enabled", () => {

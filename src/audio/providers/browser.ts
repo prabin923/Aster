@@ -18,6 +18,16 @@ interface SpeechRecognitionLike {
 
 type RecognitionConstructor = new () => SpeechRecognitionLike;
 
+function recognitionErrorMessage(error: string): string {
+  if (error === "service-not-allowed") {
+    return "Browser speech recognition is not available in this desktop WebView. On macOS, choose Native macOS speech recognition in Settings and allow Microphone and Speech Recognition access.";
+  }
+  if (error === "not-allowed") {
+    return "Browser speech recognition was denied. Allow Microphone access, or on macOS choose Native macOS speech recognition in Settings.";
+  }
+  return `Speech recognition: ${error}`;
+}
+
 export class BrowserSpeechProvider implements SpeechProvider {
   private recognition?: SpeechRecognitionLike;
   private active = false;
@@ -40,7 +50,10 @@ export class BrowserSpeechProvider implements SpeechProvider {
       }
       if (partial.trim()) callbacks.onPartialTranscript(partial.trim());
     };
-    this.recognition.onerror = (event) => callbacks.onError(`Speech recognition: ${event.error}`);
+    this.recognition.onerror = (event) => {
+      this.active = false;
+      callbacks.onError(recognitionErrorMessage(event.error));
+    };
     this.recognition.onend = () => {
       if (this.active) {
         try { this.recognition?.start(); } catch { /* already restarting */ }
@@ -55,3 +68,5 @@ export class BrowserSpeechProvider implements SpeechProvider {
     this.recognition = undefined;
   }
 }
+
+export { recognitionErrorMessage };

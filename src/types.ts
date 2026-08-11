@@ -12,7 +12,7 @@ export interface AppSettings {
   };
   audio: {
     inputDevice: string;
-    sttProvider: "mock" | "browser";
+    sttProvider: "mock" | "browser" | "native";
     autoListening: boolean;
     retainTranscript: boolean;
   };
@@ -54,10 +54,22 @@ export interface ProviderStatus {
   provider: ProviderName;
   configured: boolean;
   connected: boolean;
+  credentialStorage: "secure" | "session" | "none";
   message: string;
 }
 
-export type CaptureMode = "native_exclusion" | "window_sharing" | "unsupported";
+export interface NativeSpeechCapability {
+  supported: boolean;
+  provider: "native";
+  message: string;
+}
+
+export interface NativeSpeechEvent {
+  kind: "partial" | "final" | "error" | "status";
+  text: string;
+}
+
+export type CaptureMode = "native_exclusion" | "app_controlled_exclusion" | "window_sharing_recommended" | "unsupported";
 
 export interface CaptureCapability {
   supported: boolean;
@@ -67,12 +79,28 @@ export interface CaptureCapability {
   message: string;
 }
 
-export interface LocalCaptureTest {
-  overlayWindowExists: boolean;
-  overlayVisibleLocally: boolean;
-  windowIdentity: string;
-  supportedCaptureBehavior: string;
-  capability: CaptureCapability;
+export interface AppOwnedStreamStatus {
+  mode: CaptureMode;
+  supported: boolean;
+  enabled: boolean;
+  message: string;
+}
+
+export interface CaptureStatus extends CaptureCapability {
+  appOwnedStream?: AppOwnedStreamStatus;
+}
+
+export type CaptureTestResult = "pass" | "fail" | "not_applicable";
+
+export interface CapturePrivacyTest {
+  platform: string;
+  overlayDetected: boolean;
+  nativeWindowDetected: boolean;
+  captureCapability: CaptureCapability;
+  exclusion: "enabled" | "disabled";
+  result: CaptureTestResult;
+  message: string;
+  appOwnedStream?: AppOwnedStreamStatus;
 }
 
 export interface TranscriptSegment {

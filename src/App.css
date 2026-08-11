@@ -14,6 +14,19 @@ button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 input, select, textarea { width: 100%; border: 1px solid rgb(39 39 42); border-radius: 0.6rem; background: rgb(9 9 11 / .7); color: #f4f4f5; padding: .45rem .55rem; outline: none; font-size: .75rem; }
 input:focus, select:focus, textarea:focus { border-color: rgb(167 139 250 / .8); box-shadow: 0 0 0 3px rgb(139 92 246 / .13); }
+
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+  cursor: grab;
+}
+
+[data-tauri-drag-region]:active {
+  cursor: grabbing;
+}
+
+button, input, select, textarea, a, [data-tauri-drag-region="false"] {
+  -webkit-app-region: no-drag;
+}
 input[type="range"] { padding: 0; accent-color: #a78bfa; }
 input[type="checkbox"] { width: auto; }
 html[data-theme="light"] { color: #18181b; color-scheme: light; }

@@ -15,17 +15,17 @@ Aster is local-first by default.
 
 The Context tab displays **MIC ON/OFF**, **SCREEN CONTEXT ON/OFF**, **SCREEN-SHARE MODE**, and **AI** state. Aster does not use deceptive indicators. Enabling screen context requires an explicit system capture selection each time.
 
-## Screen-share exclusion
+## Screen-share privacy
 
-The **Screen-share exclusion** control leaves Aster's native overlay visible on the local display. It does not hide the process or change endpoint-security, monitoring, DRM, examination, or proctoring behavior.
+The **Screen-share privacy** controls leave Aster's native overlay visible on the local display. They do not hide the process or change endpoint-security, monitoring, DRM, examination, or proctoring behavior.
 
 | Platform | Aster status | Implementation and limit |
 | --- | --- | --- |
 | Windows 10 version 2004+ | Supported | Calls and verifies `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)` on Aster's top-level native window. It applies only to compatible DWM-composed capture paths. |
-| macOS | Window sharing | Aster does not use `NSWindowSharingNone` as a capture-exclusion workaround. It recommends selecting a specific meeting/application window rather than **Entire Screen**, and does not claim the overlay is universally hidden. |
+| macOS | Supported | Applies `NSWindowSharingNone` to Aster's native `NSWindow` handle and verifies the setting. On macOS 12.3+, the **Capture Privacy Test** verifies an app-owned ScreenCaptureKit stream excluding the overlay. |
 | Linux | Unsupported | Aster detects the session/desktop but the current window backend has no documented cross-desktop equivalent. |
 
-Unsupported systems show **Capture exclusion is not supported in this environment.** A successful Windows call does not imply universal invisibility: external hardware, unsupported recorders, remote monitoring, and other capture paths are outside its scope.
+Unsupported systems show **Capture exclusion is not supported in this environment.** A successful Windows call, or a successful macOS app-owned test, does not imply universal invisibility: external hardware, unsupported recorders, remote monitoring, and other capture paths are outside its scope.
 
 ## Controls
 

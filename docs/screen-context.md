@@ -18,12 +18,21 @@ Screen context and screen-share behavior are independent. Screen context uses a 
 
 ## Overlay screen-share behavior
 
-Aster queries the native capture-policy module and displays its exact result. The local **Run local window check** verifies that the overlay window exists, is visible locally, identifies the window label, and reports the applicable documented capture behavior. It does not inspect, alter, or try to bypass third-party capture, monitoring, or proctoring software.
+Aster queries the native `capture_policy` module and displays its exact result. The **Capture Privacy Test** only exercises Aster's own native-window and capture path; it never inspects, alters, or tries to bypass a third-party capture, monitoring, or proctoring application.
+
+On macOS 12.3 or later, the test deliberately verifies an app-controlled stream, not an OS-wide guarantee:
+
+1. Aster confirms that its overlay has a native `NSWindow` and temporarily adds a test marker to that overlay.
+2. It obtains `SCShareableContent`, locates the matching `SCWindow` and the display containing it.
+3. It creates `SCContentFilter(display:excludingWindows:)` and an Aster-owned `SCStream`.
+4. It receives a frame, checks that the test marker is absent, stops the stream, and removes the marker.
+
+Screen Recording permission, unavailable shareable content, or a missing frame produces **Not applicable** rather than a success claim. The test keeps its frame in memory only and does not persist a recording or screenshot.
 
 | Platform | Mode shown by Aster | Behavior |
 | --- | --- | --- |
 | Windows 10 version 2004+ | Native exclusion | Aster applies `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)` to its own top-level native HWND and reads the affinity back. If either call or verification fails, the UI reports exclusion as off. |
-| macOS | Window sharing | Aster does not use `NSWindowSharingNone` as an exclusion claim. macOS does not provide the same documented per-window capture-exclusion mechanism used on Windows. Keep Aster visible locally and select a specific meeting/application window when possible; do not select **Entire Screen** if you do not want other windows included. Capture behavior depends on the meeting app. |
+| macOS | Native exclusion | Aster applies `NSWindowSharingNone` to its native `NSWindow` handle and reads the setting back. If either call or verification fails, the UI reports exclusion as off. |
 | Linux | Unsupported | Aster detects `XDG_SESSION_TYPE` and `XDG_CURRENT_DESKTOP`, then reports that capture exclusion is unsupported until a documented, desktop-specific API is implemented. |
 
 Capture exclusion is limited to supported normal OS capture paths. It is not equivalent to invisibility from security software, operating-system monitoring, external recorders, or proctoring systems.

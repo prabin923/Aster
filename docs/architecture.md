@@ -19,9 +19,9 @@ React overlay ── Tauri IPC ── Rust native boundary ── AI provider
 
 ## Native boundary
 
-The Rust process owns settings persistence, `keyring` access, provider transport, response streaming, window position, platform capture-exclusion status, and a small provider request limiter. Provider events are emitted over `aster://ai-stream`; the renderer begins rendering each delta without waiting for completion.
+The Rust process owns settings persistence, `keyring` access, provider transport, response streaming, window position, platform capture-policy status, and a small provider request limiter. Provider events are emitted over `aster://ai-stream`; the renderer begins rendering each delta without waiting for completion.
 
-`src-tauri/src/capture_exclusion/` contains one module per supported desktop family. It returns structured `supported`, `requested`, and `applied` status to React rather than treating a setting as proof of capture behavior.
+`src-tauri/src/capture_policy/` contains one module per supported desktop family. It returns a native capability (`native_exclusion`, `app_controlled_exclusion`, `window_sharing_recommended`, or `unsupported`) and an actual enabled state to React rather than treating a setting as proof of capture behavior. Windows operates only on Aster's HWND. macOS can test only an Aster-owned ScreenCaptureKit stream that excludes the overlay; it does not control another application's capture stream.
 
 `settings.json` contains only non-secret preferences. Provider credentials live under the `com.aster.native-realtime-assistant` keyring service. All cloud calls originate in Rust, after a second secret-sanitization pass.
 

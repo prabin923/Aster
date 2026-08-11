@@ -1,4 +1,5 @@
 use crate::models::{AiSettings, AiStreamEvent, StructuredContext};
+use crate::security::redact_text;
 use futures_util::StreamExt;
 use reqwest::Client;
 use serde_json::{json, Value};
@@ -37,11 +38,7 @@ pub async fn health_check(provider: &str, api_key: Option<String>) -> Result<(),
         "claude" => client()?.get("https://api.anthropic.com/v1/models").header("x-api-key", key).header("anthropic-version", "2023-06-01").send().await,
         _ => return Err("Select Mock, OpenAI, Gemini, or Claude in Settings.".to_string()),
     }.map_err(|_| format!("{provider} is unreachable. Check your network and try again."))?;
-    if response.status().is_success() {
-        Ok(())
-    } else {
-        Err(format!("{provider} returned {}. Check the API key and account access.", response.status()))
-    }
+    if response.status().is_success() { Ok(()) } else { Err(provider_response_error(provider, response).await) }
 }
 
 fn is_cancelled(cancelled: &Arc<Mutex<HashSet<String>>>, request_id: &str) -> bool {
@@ -118,6 +115,23 @@ fn client() -> Result<Client, String> {
         .map_err(|_| "Unable to initialize a secure network client.".to_string())
 }
 
+fn safe_provider_detail(body: &str) -> String {
+    let detail = serde_json::from_str::<Value>(body)
+        .ok()
+        .and_then(|value| value.pointer("/error/message").and_then(Value::as_str).map(ToString::to_string))
+        .unwrap_or_else(|| body.to_string());
+    let redacted = redact_text(&detail);
+    let clipped: String = redacted.chars().take(600).collect();
+    if clipped.trim().is_empty() { "No diagnostic message was returned.".to_string() } else { clipped }
+}
+
+async fn provider_response_error(provider: &str, response: reqwest::Response) -> String {
+    let status = response.status();
+    let detail = response.text().await.map(|body| safe_provider_detail(&body))
+        .unwrap_or_else(|_| "No diagnostic message was returned.".to_string());
+    format!("{provider} returned {status}: {detail}")
+}
+
 async fn stream_openai(
     app: AppHandle,
     request_id: String,
@@ -141,9 +155,7 @@ async fn stream_openai(
             ]
         }))
         .send().await.map_err(|_| "OpenAI is unreachable. Check your network and try again." )?;
-    if !response.status().is_success() {
-        return Err(format!("OpenAI returned {}.", response.status()));
-    }
+    if !response.status().is_success() { return Err(provider_response_error("OpenAI", response).await); }
     stream_sse(response, app, request_id, cancelled, |value| {
         value.pointer("/choices/0/delta/content").and_then(Value::as_str).map(ToString::to_string)
     }).await
@@ -168,9 +180,7 @@ async fn stream_gemini(
             "generationConfig": {"maxOutputTokens": settings.max_output}
         }))
         .send().await.map_err(|_| "Gemini is unreachable. Check your network and try again." )?;
-    if !response.status().is_success() {
-        return Err(format!("Gemini returned {}. Check your model and API key.", response.status()));
-    }
+    if !response.status().is_success() { return Err(provider_response_error("Gemini", response).await); }
     stream_sse(response, app, request_id, cancelled, |value| {
         value.pointer("/candidates/0/content/parts/0/text").and_then(Value::as_str).map(ToString::to_string)
     }).await
@@ -197,9 +207,7 @@ async fn stream_claude(
             "messages": [{"role": "user", "content": prompt_from_context(&context)}]
         }))
         .send().await.map_err(|_| "Claude is unreachable. Check your network and try again." )?;
-    if !response.status().is_success() {
-        return Err(format!("Claude returned {}. Check your model and API key.", response.status()));
-    }
+    if !response.status().is_success() { return Err(provider_response_error("Claude", response).await); }
     stream_sse(response, app, request_id, cancelled, |value| {
         if value.get("type").and_then(Value::as_str) == Some("content_block_delta") {
             value.pointer("/delta/text").and_then(Value::as_str).map(ToString::to_string)
@@ -243,4 +251,17 @@ where
     }
     emit(&app, &request_id, "", true, None);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::safe_provider_detail;
+
+    #[test]
+    fn provider_errors_are_clipped_and_secret_redacted() {
+        let detail = safe_provider_detail(r#"{"error":{"message":"Invalid model; key AIzaThisIsAnExampleSecretValue123456"}}"#);
+        assert!(detail.contains("Invalid model"));
+        assert!(detail.contains("[REDACTED]"));
+        assert!(!detail.contains("AIzaThisIsAnExampleSecretValue123456"));
+    }
 }

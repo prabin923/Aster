@@ -4,9 +4,23 @@ use regex::Regex;
 
 const KEYRING_SERVICE: &str = "com.aster.native-realtime-assistant";
 
+fn storage_error(action: &str, error: impl std::fmt::Display) -> String {
+    #[cfg(target_os = "macos")]
+    {
+        format!(
+            "macOS Keychain could not {action}: {error}. Open Keychain Access, unlock the login keychain, then retry. Aster will not save API keys outside secure storage."
+        )
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        format!("Secure credential storage could not {action}: {error}.")
+    }
+}
+
 fn entry(provider: &str) -> Result<Entry, String> {
     let account = format!("provider:{}", provider.trim().to_ascii_lowercase());
-    Entry::new(KEYRING_SERVICE, &account).map_err(|_| "Secure credential storage is unavailable.".to_string())
+    Entry::new(KEYRING_SERVICE, &account)
+        .map_err(|error| storage_error("initialize", error))
 }
 
 pub fn store_provider_key(provider: &str, value: &str) -> Result<(), String> {
@@ -16,7 +30,7 @@ pub fn store_provider_key(provider: &str, value: &str) -> Result<(), String> {
     }
     entry(provider)?
         .set_password(key)
-        .map_err(|_| "Could not save the API key in native secure storage.".to_string())
+        .map_err(|error| storage_error("save this API key", error))
 }
 
 pub fn get_provider_key(provider: &str) -> Result<Option<String>, String> {
@@ -24,14 +38,14 @@ pub fn get_provider_key(provider: &str) -> Result<Option<String>, String> {
         Ok(value) if !value.trim().is_empty() => Ok(Some(value)),
         Ok(_) => Ok(None),
         Err(keyring::Error::NoEntry) => Ok(None),
-        Err(_) => Err("Could not read the API key from native secure storage.".to_string()),
+        Err(error) => Err(storage_error("read this API key", error)),
     }
 }
 
 pub fn delete_provider_key(provider: &str) -> Result<(), String> {
     match entry(provider)?.delete_credential() {
         Ok(_) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(_) => Err("Could not remove the API key from native secure storage.".to_string()),
+        Err(error) => Err(storage_error("remove this API key", error)),
     }
 }
 
@@ -66,7 +80,7 @@ pub fn sanitize_context(context: &StructuredContext) -> StructuredContext {
 
 #[cfg(test)]
 mod tests {
-    use super::{redact_text, sanitize_context};
+    use super::{redact_text, sanitize_context, storage_error};
     use crate::models::{ScreenContext, StructuredContext};
 
     #[test]
@@ -89,5 +103,12 @@ mod tests {
         assert_eq!(safe.current_question, "[REDACTED]");
         assert_eq!(safe.recent_transcript[0], "[REDACTED]");
         assert_eq!(safe.screen_context.visible_text, "[REDACTED]");
+    }
+
+    #[test]
+    fn secure_storage_errors_do_not_echo_a_credential() {
+        let message = storage_error("save this API key", "Keychain authorization failed");
+        assert!(message.contains("Keychain"));
+        assert!(!message.contains("AIza"));
     }
 }

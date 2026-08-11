@@ -11,6 +11,7 @@ export function safeCaptureCapability(capability?: CaptureCapability): CaptureCa
 
 export function captureModeLabel(mode?: CaptureMode): string {
   if (mode === "native_exclusion") return "Native exclusion";
-  if (mode === "window_sharing") return "Window sharing";
+  if (mode === "app_controlled_exclusion") return "App-controlled exclusion";
+  if (mode === "window_sharing_recommended") return "Window sharing recommended";
   return "Unsupported";
 }

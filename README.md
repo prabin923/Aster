@@ -6,11 +6,11 @@ It is deliberately not a covert tool: Aster does not hide its process, bypass se
 
 ## What works in this MVP
 
-- Frameless, draggable, resizable, always-on-top overlay with opacity, position, theme, collapse/minimize, and configurable global shortcuts.
+- Frameless, draggable, resizable, always-on-top overlay with opacity, position, theme, collapse/minimize, configurable global shortcuts, a native one-click move-to-next-display action, and automatic multi-monitor following. On macOS, Aster follows the front app window's display (with cursor-display fallback), including keyboard-only app/window switches; it uses only window PID/layer/bounds in memory and never reads window content.
 - Streaming chat with Markdown, code blocks, stop, regenerate, copy, clear, and optional in-memory conversation history.
 - Mock AI that runs without a network connection, plus native OpenAI, Gemini, and Claude streaming adapters.
 - API keys go directly from the one-time settings input to native Keychain/Credential Manager/Secret Service storage; they are never returned to the renderer or saved in settings JSON.
-- Microphone selection, permission errors, pause/resume, device-change detection, Mock STT, and a browser-speech adapter where the platform WebView exposes speech recognition.
+- Microphone selection, permission errors, pause/resume, device-change detection, Mock STT, native macOS Speech recognition, and a browser-speech adapter where the platform WebView exposes speech recognition.
 - Explicit, on-demand screen capture with local Tesseract OCR. Screenshots and microphone audio are stopped and discarded after processing.
 - Rolling, secret-redacted context with a bounded transcript buffer and question detection.
 
@@ -66,9 +66,9 @@ docs/                architecture, privacy, providers, audio, screen, security, 
 
 ## Important limitations
 
-- The browser-speech adapter depends on `SpeechRecognition` availability in the embedded WebView. Mock STT is always available; production deployments should add a dedicated native or cloud STT adapter for consistent cross-platform recognition.
+- macOS 10.15+ has a native Speech framework provider. It requests Microphone and Speech Recognition permission at first use and may use Apple speech-recognition services when on-device recognition is unavailable. The browser-speech adapter still depends on `SpeechRecognition` availability in the embedded WebView; a `service-not-allowed` response means that adapter is unavailable and does not mean the microphone is still listening. Mock STT is always available. Windows and Linux still need a dedicated native or cloud STT adapter for consistent recognition.
 - Screen OCR is local but Tesseract may obtain language assets on first use, depending on the runtime cache. The captured image itself is not uploaded by Aster.
-- Windows 10 version 2004+ can use and verify `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)` for Aster's top-level overlay, where supported by the capture path. macOS has no equivalent guaranteed per-window exclusion in this app: Aster reports **Window sharing recommended** and explains how to choose a specific meeting/application window. Linux reports its detected session/desktop and remains unsupported unless a documented native implementation is added. None of these states mean universal recorder, monitoring, or proctoring invisibility.
+- Windows 10 version 2004+ can use and verify `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)` for Aster's top-level overlay. On macOS, Aster applies `NSWindowSharingNone` to its top-level native window. On macOS 12.3+, the optional **Capture Privacy Test** can verify a separate, Aster-owned ScreenCaptureKit stream created with the overlay excluded. Linux reports its detected session/desktop and remains unsupported unless a documented native implementation is added. None of these states mean universal recorder, monitoring, or proctoring invisibility.
 - This MVP does not yet include signed/notarized releases, automated update delivery, or a native loopback/system-audio capture pipeline.
 
 ## Documentation

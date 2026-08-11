@@ -7,4 +7,6 @@ export interface SpeechCallbacks {
 export interface SpeechProvider {
   startStream(callbacks: SpeechCallbacks): Promise<void>;
   stopStream(): Promise<void>;
+  pause?(): Promise<void>;
+  resume?(): Promise<void>;
 }

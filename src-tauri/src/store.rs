@@ -30,8 +30,8 @@ fn migrate_settings(mut value: Value) -> Value {
     if !general.contains_key("screenShareExclusion") {
         let requested_exclusion = general.remove("includeOverlayInScreenShare")
             .and_then(|include| include.as_bool().map(|value| !value))
-            .unwrap_or_else(crate::capture_exclusion::default_enabled);
-        let exclusion = requested_exclusion && crate::capture_exclusion::default_enabled();
+            .unwrap_or_else(crate::capture_policy::default_enabled);
+        let exclusion = requested_exclusion && crate::capture_policy::default_enabled();
         general.insert("screenShareExclusion".to_string(), Value::Bool(exclusion));
     }
     value

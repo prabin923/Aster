@@ -26,13 +26,18 @@ pub fn load_settings(app: &AppHandle) -> AppSettings {
 }
 
 fn migrate_settings(mut value: Value) -> Value {
-    let Some(general) = value.get_mut("general").and_then(Value::as_object_mut) else { return value };
-    if !general.contains_key("screenShareExclusion") {
-        let requested_exclusion = general.remove("includeOverlayInScreenShare")
-            .and_then(|include| include.as_bool().map(|value| !value))
-            .unwrap_or_else(crate::capture_policy::default_enabled);
-        let exclusion = requested_exclusion && crate::capture_policy::default_enabled();
-        general.insert("screenShareExclusion".to_string(), Value::Bool(exclusion));
+    if let Some(general) = value.get_mut("general").and_then(Value::as_object_mut) {
+        if !general.contains_key("screenShareExclusion") {
+            let requested_exclusion = general.remove("includeOverlayInScreenShare")
+                .and_then(|include| include.as_bool().map(|value| !value))
+                .unwrap_or_else(crate::capture_policy::default_enabled);
+            let exclusion = requested_exclusion && crate::capture_policy::default_enabled();
+            general.insert("screenShareExclusion".to_string(), Value::Bool(exclusion));
+        }
+        general.entry("followActiveWindow".to_string()).or_insert(Value::Bool(true));
+    }
+    if let Some(privacy) = value.get_mut("privacy").and_then(Value::as_object_mut) {
+        privacy.entry("aiContextualization".to_string()).or_insert(Value::Bool(false));
     }
     value
 }

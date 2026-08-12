@@ -109,10 +109,6 @@ pub fn setup_window_behavior(window: &WebviewWindow) {
     platform::setup_window_behavior(window);
 }
 
-pub fn follow_cursor_to_screen(window: &WebviewWindow) -> bool {
-    platform::follow_cursor_to_screen(window)
-}
-
 pub fn is_capture_exclusion_supported() -> bool {
     platform::is_capture_exclusion_supported()
 }

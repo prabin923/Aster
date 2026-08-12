@@ -26,7 +26,6 @@ pub fn name() -> &'static str { "Windows" }
 pub fn mode() -> CaptureMode { CaptureMode::NativeExclusion }
 pub fn requires_overlay_marker() -> bool { false }
 pub fn setup_window_behavior(_window: &WebviewWindow) {}
-pub fn follow_cursor_to_screen(_window: &WebviewWindow) -> bool { false }
 pub fn app_owned_stream_status() -> Option<AppOwnedStreamStatus> { None }
 
 fn build_number() -> Option<u32> {

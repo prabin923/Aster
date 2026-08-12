@@ -1,4 +1,7 @@
-use crate::models::{ScreenContext, StructuredContext};
+use crate::models::{
+    ScreenContext, StructuredContext, WorkingApplication, WorkingBounds, WorkingContext,
+    WorkingWindow,
+};
 use keyring::Entry;
 use regex::Regex;
 
@@ -70,11 +73,31 @@ pub fn sanitize_context(context: &StructuredContext) -> StructuredContext {
         conversation_summary: redact_text(&context.conversation_summary),
         screen_context: ScreenContext {
             application: redact_text(&context.screen_context.application),
+            application_id: redact_text(&context.screen_context.application_id),
             window_title: redact_text(&context.screen_context.window_title),
             visible_text: redact_text(&context.screen_context.visible_text),
             detected_topics: context.screen_context.detected_topics.iter().map(|item| redact_text(item)).collect(),
+            captured_at: context.screen_context.captured_at,
+            source: redact_text(&context.screen_context.source),
         },
         task_context: redact_text(&context.task_context),
+        working_context: context.working_context.as_ref().map(|working| WorkingContext {
+            application: WorkingApplication {
+                name: redact_text(&working.application.name),
+                identifier: redact_text(&working.application.identifier),
+            },
+            window: WorkingWindow { title: redact_text(&working.window.title) },
+            timestamp: working.timestamp,
+            source: redact_text(&working.source),
+            display_id: redact_text(&working.display_id),
+            bounds: working.bounds.as_ref().map(|bounds| WorkingBounds {
+                x: bounds.x,
+                y: bounds.y,
+                width: bounds.width,
+                height: bounds.height,
+            }),
+            limited: working.limited,
+        }),
     }
 }
 
@@ -98,6 +121,7 @@ mod tests {
             conversation_summary: String::new(),
             screen_context: ScreenContext { visible_text: "AIzaThisIsAnExampleSecretValue123456".into(), ..Default::default() },
             task_context: String::new(),
+            working_context: None,
         };
         let safe = sanitize_context(&context);
         assert_eq!(safe.current_question, "[REDACTED]");

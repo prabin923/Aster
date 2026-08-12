@@ -64,11 +64,26 @@ fn prompt_from_context(context: &StructuredContext) -> String {
     } else {
         context.recent_transcript.join("\n")
     };
+    let working_context = context
+        .working_context
+        .as_ref()
+        .map(|working| {
+            format!(
+                "Application: {}\nIdentifier: {}\nWindow title: {}\nDisplay: {}\nObserved at: {}",
+                working.application.name,
+                working.application.identifier,
+                working.window.title,
+                working.display_id,
+                working.timestamp,
+            )
+        })
+        .unwrap_or_else(|| "(not enabled)".to_string());
     format!(
-        "Current question:\n{}\n\nRecent transcript:\n{}\n\nConversation summary:\n{}\n\nScreen context (only if enabled by the user):\nApplication: {}\nTitle: {}\nVisible text: {}\nTopics: {}\n\nTask context:\n{}",
+        "Current question:\n{}\n\nRecent transcript:\n{}\n\nConversation summary:\n{}\n\nWorking-window metadata (only if AI contextualization is enabled by the user):\n{}\n\nScreen context (only if enabled by the user):\nApplication: {}\nTitle: {}\nVisible text: {}\nTopics: {}\n\nTask context:\n{}",
         context.current_question,
         transcript,
         context.conversation_summary,
+        working_context,
         context.screen_context.application,
         context.screen_context.window_title,
         context.screen_context.visible_text,

@@ -6,6 +6,7 @@
 - Rust validates settings and owns all provider HTTP requests.
 - Capability configuration permits only required window, store, opener, and global-shortcut operations.
 - There is no shell plugin, arbitrary filesystem access, system process discovery, or hidden-process behavior.
+- Active-window context uses documented foreground-window metadata only. It never reads process memory, fields, pixels, keystrokes, clipboard contents, browser history, or message bodies.
 
 ## Credentials
 
@@ -14,6 +15,8 @@ Provider keys are stored with Rust `keyring`, which maps to macOS Keychain, Wind
 ## Cloud data minimization
 
 Before every request, both the frontend context manager and Rust backend redact common key/password/token assignments, bearer credentials, private-key blocks, and recognizable API-key prefixes. This is defense in depth, not a replacement for reviewing the context before sending it to a cloud provider.
+
+Active-window metadata is local-only by default. It enters an LLM request only after the user enables **Use active-window metadata in AI requests**. Screen-derived text remains separately opt-in and is invalidated when it belongs to a previous unpinned application.
 
 ## Resilience
 

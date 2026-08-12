@@ -20,27 +20,13 @@ pub struct NativeSpeechEvent {
 }
 
 #[cfg(target_os = "macos")]
-pub fn capability() -> NativeSpeechCapability {
-    macos::capability()
-}
-
-#[cfg(not(target_os = "macos"))]
-pub fn capability() -> NativeSpeechCapability {
-    NativeSpeechCapability {
-        supported: false,
-        provider: "native".into(),
-        message: "Native speech recognition is currently available on macOS only. Select Browser or Mock on this system.".into(),
-    }
-}
-
-#[cfg(target_os = "macos")]
 pub fn start(app: AppHandle) -> Result<(), String> {
     macos::start(app)
 }
 
 #[cfg(not(target_os = "macos"))]
 pub fn start(_app: AppHandle) -> Result<(), String> {
-    Err(capability().message)
+    Err("Native speech recognition is currently available on macOS only. Select Browser or Mock on this system.".into())
 }
 
 #[cfg(target_os = "macos")]

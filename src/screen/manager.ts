@@ -1,22 +1,25 @@
 import { createWorker } from "tesseract.js";
-import type { ScreenContext } from "../types";
+import type { ScreenContext, WorkingContext } from "../types";
 
 const topicPatterns = ["React", "TypeScript", "Rust", "Tauri", "Next.js", "Prisma", "SQL", "Python", "Docker", "Kubernetes"];
 
-export function parseScreenContext(visibleText: string): ScreenContext {
+export function parseScreenContext(visibleText: string, workingContext?: WorkingContext | null): ScreenContext {
   const text = visibleText.trim().slice(0, 3_000);
   return {
-    application: "User-approved screen capture",
-    windowTitle: "Selected source",
+    application: workingContext?.application.name || "User-approved screen capture",
+    applicationId: workingContext?.application.identifier,
+    windowTitle: workingContext?.window.title || "Selected source",
     visibleText: text,
     detectedTopics: topicPatterns.filter((topic) => new RegExp(`\\b${topic.replace(".", "\\.")}\\b`, "i").test(text)),
+    capturedAt: Date.now(),
+    source: "screen_capture",
   };
 }
 
 export class ScreenContextProvider {
   private context: ScreenContext = { application: "", windowTitle: "", visibleText: "", detectedTopics: [] };
 
-  async capture(): Promise<ScreenContext> {
+  async capture(workingContext?: WorkingContext | null): Promise<ScreenContext> {
     const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
     try {
       const video = document.createElement("video");
@@ -31,7 +34,7 @@ export class ScreenContextProvider {
       canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height);
       const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((result) => result ? resolve(result) : reject(new Error("Unable to create the capture.")), "image/jpeg", 0.82));
       const visibleText = await this.extractText(blob);
-      this.context = parseScreenContext(visibleText);
+      this.context = parseScreenContext(visibleText, workingContext);
       return this.context;
     } finally {
       stream.getTracks().forEach((track) => track.stop());
@@ -46,14 +49,6 @@ export class ScreenContextProvider {
     } finally {
       await worker.terminate();
     }
-  }
-
-  async getActiveWindow(): Promise<{ application: string; windowTitle: string }> {
-    return { application: "User-approved screen capture", windowTitle: "Selected source" };
-  }
-
-  getContext(): ScreenContext {
-    return { ...this.context, detectedTopics: [...this.context.detectedTopics] };
   }
 
   clearContext(): void {

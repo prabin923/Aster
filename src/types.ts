@@ -9,6 +9,7 @@ export interface AppSettings {
     position: string;
     shortcut: string;
     screenShareExclusion: boolean;
+    followActiveWindow: boolean;
   };
   audio: {
     inputDevice: string;
@@ -31,15 +32,55 @@ export interface AppSettings {
   };
   privacy: {
     conversationHistory: boolean;
+    aiContextualization: boolean;
     telemetry: boolean;
   };
 }
 
 export interface ScreenContext {
   application: string;
+  applicationId?: string;
   windowTitle: string;
   visibleText: string;
   detectedTopics: string[];
+  capturedAt?: number;
+  source?: "screen_capture";
+}
+
+export interface WindowBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface ActiveWindow {
+  available: boolean;
+  reason?: string;
+  applicationName: string;
+  bundleId: string;
+  windowTitle: string;
+  processId: number;
+  bounds?: WindowBounds;
+  displayId: string;
+  isAssistantWindow: boolean;
+}
+
+export interface WorkingContext {
+  application: { name: string; identifier: string };
+  window: { title: string };
+  timestamp: number;
+  source: "active_window";
+  displayId: string;
+  bounds?: WindowBounds;
+  limited?: boolean;
+}
+
+export interface ApplicationContextHistory {
+  application: string;
+  applicationId: string;
+  startedAt: number;
+  endedAt: number | null;
 }
 
 export interface StructuredContext {
@@ -48,6 +89,7 @@ export interface StructuredContext {
   conversationSummary: string;
   screenContext: ScreenContext;
   taskContext: string;
+  workingContext?: WorkingContext | null;
 }
 
 export interface ProviderStatus {
@@ -55,12 +97,6 @@ export interface ProviderStatus {
   configured: boolean;
   connected: boolean;
   credentialStorage: "secure" | "session" | "none";
-  message: string;
-}
-
-export interface NativeSpeechCapability {
-  supported: boolean;
-  provider: "native";
   message: string;
 }
 
@@ -125,6 +161,7 @@ export const defaultSettings: AppSettings = {
     position: "top-right",
     shortcut: "CommandOrControl+Space",
     screenShareExclusion: false,
+    followActiveWindow: true,
   },
   audio: {
     inputDevice: "default",
@@ -147,6 +184,7 @@ export const defaultSettings: AppSettings = {
   },
   privacy: {
     conversationHistory: false,
+    aiContextualization: false,
     telemetry: false,
   },
 };

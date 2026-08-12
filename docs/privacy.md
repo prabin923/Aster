@@ -8,12 +8,17 @@ Aster is local-first by default.
 | Transcript | Current session only | Bounded active context; optional UI history | Redacted before a cloud AI request |
 | Screen capture | Off | Frame is discarded after local OCR | Screenshot is not uploaded by Aster |
 | Screen-derived text | Current session only | Cleared by **Clear Screen Context**; never written to settings | Redacted and included only in an answer request |
+| Active-window metadata | Current session only | App name/identifier, title, bounds, display, timestamp; up to 12 local history entries | Not sent unless **Use active-window metadata in AI requests** is explicitly enabled |
 | API key | User action required | OS secure credential store | Sent only from Rust to the chosen provider |
 | Telemetry | Off | No telemetry collector is enabled | N/A |
 
 ## Visible indicators
 
 The Context tab displays **MIC ON/OFF**, **SCREEN CONTEXT ON/OFF**, **SCREEN-SHARE MODE**, and **AI** state. Aster does not use deceptive indicators. Enabling screen context requires an explicit system capture selection each time.
+
+The Assistant view also displays **Working in** with the current app and focused-window title when macOS Accessibility or the applicable platform API permits it. Clicking Aster does not replace the working context with Aster itself. The title is metadata, not inspected window contents; Aster does not collect fields, keystrokes, clipboard data, private message bodies, browser history, or screenshots from this service.
+
+If macOS Accessibility permission is denied, the active-window service returns `accessibility_permission_required` and exposes only the front application metadata it can safely obtain from AppKit. It never prompts, changes system permissions, or works around the denial.
 
 ## Screen-share privacy
 

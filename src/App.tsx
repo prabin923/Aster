@@ -10,6 +10,8 @@ import { Overlay } from "./components/Overlay";
 import { Settings } from "./components/Settings";
 import { StatusIndicator } from "./components/StatusIndicator";
 import { Transcript } from "./components/Transcript";
+import { WorkingContextIndicator } from "./components/WorkingContextIndicator";
+import { ActiveWindowManager, type ActiveWindowState } from "./active-window/manager";
 import { ContextManager } from "./context/manager";
 import { isLikelyQuestion } from "./context/question-detector";
 import { native } from "./native/commands";
@@ -42,6 +44,7 @@ function App() {
   const [capturing, setCapturing] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [banner, setBanner] = useState("Local mock provider is ready.");
+  const [activeWindowState, setActiveWindowState] = useState<ActiveWindowState>({ current: null, previous: null, pinned: null, history: [] });
 
   const [smartMode, setSmartMode] = useState(false);
 
@@ -49,6 +52,7 @@ function App() {
   const audioManager = useRef(new AudioManager());
   const screenProvider = useRef(new ScreenContextProvider());
   const aiManager = useRef(new AiManager());
+  const activeWindowManager = useRef(new ActiveWindowManager(native.getActiveWindow));
   const generateRef = useRef<(override?: string) => Promise<void>>(async () => {});
   const solveCodeRef = useRef<() => Promise<void>>(async () => {});
   const assistScreenRef = useRef<() => Promise<void>>(async () => {});
@@ -65,6 +69,7 @@ function App() {
     native.getSettings().then((saved) => {
       setSettings(saved);
       document.documentElement.dataset.theme = saved.general.theme;
+      contextManager.current.setAiContextualization(saved.privacy.aiContextualization);
       if (!saved.screen.enabled) contextManager.current.clearScreenContext();
     }).catch(() => setBanner("Using local defaults — settings store is unavailable."));
     refreshNativeStatus().catch(() => setBanner("Native status is unavailable."));
@@ -76,6 +81,40 @@ function App() {
     refreshDevices();
     return audioManager.current.onDeviceChange(refreshDevices);
   }, []);
+
+  useEffect(() => {
+    contextManager.current.setAiContextualization(settings.privacy.aiContextualization);
+  }, [settings.privacy.aiContextualization]);
+
+  useEffect(() => {
+    const manager = activeWindowManager.current;
+    const unsubscribe = manager.subscribe((nextState) => {
+      setActiveWindowState(nextState);
+      const staleScreenContext = contextManager.current.setWorkingContext(nextState.pinned || nextState.current);
+      if (staleScreenContext) {
+        screenProvider.current.clearContext();
+        setScreenContext(emptyScreen);
+      }
+      const effectiveContext = nextState.pinned || nextState.current;
+      if (settings.general.followActiveWindow && effectiveContext?.bounds) {
+        void native.followActiveWindow(effectiveContext.bounds).catch(() => {});
+      }
+    });
+    let unlistenNative: (() => void) | undefined;
+    let disposed = false;
+    native.onActiveWindow((snapshot) => manager.ingest(snapshot)).then((dispose) => {
+      if (disposed) dispose();
+      else unlistenNative = dispose;
+    }).catch(() => setBanner("Native active-window updates are unavailable."));
+    manager.start();
+    void manager.poll();
+    return () => {
+      disposed = true;
+      unsubscribe();
+      unlistenNative?.();
+      manager.stop();
+    };
+  }, [settings.general.followActiveWindow]);
 
   const generate = useCallback(async (override?: string) => {
     const prompt = (override ?? question).trim();
@@ -114,7 +153,12 @@ function App() {
     if (!settings.screen.enabled) return emptyScreen;
     setCapturing(true);
     try {
-      const next = await screenProvider.current.capture();
+      const capturedFor = activeWindowManager.current.getEffectiveContext();
+      const next = await screenProvider.current.capture(capturedFor);
+      const currentContext = activeWindowManager.current.getEffectiveContext();
+      if (capturedFor?.application.identifier && currentContext?.application.identifier !== capturedFor.application.identifier) {
+        return emptyScreen;
+      }
       contextManager.current.setScreenContext(next);
       setScreenContext(next);
       return next;
@@ -211,6 +255,7 @@ function App() {
   };
   const clear = () => {
     contextManager.current.clear();
+    activeWindowManager.current.clearHistory();
     setQuestion(""); setAnswer(""); setHistory([]); setTranscript([]); setPartial(""); setScreenContext(emptyScreen);
     setBanner("Conversation and cached context cleared.");
   };
@@ -249,11 +294,20 @@ function App() {
   const resumeListening = async () => { await audioManager.current.resume(); setPaused(false); };
 
   const clearScreen = () => { contextManager.current.clearScreenContext(); screenProvider.current.clearContext(); setScreenContext(emptyScreen); setBanner("Screen-derived context cleared."); };
+  const toggleWorkingContextPin = () => {
+    const pinned = activeWindowManager.current.togglePin();
+    setBanner(pinned ? "Working context pinned until you unpin it." : "Working context returned to automatic detection.");
+  };
+  const clearWorkingContextHistory = () => {
+    activeWindowManager.current.clearHistory();
+    setBanner("Application context history cleared.");
+  };
 
   const saveSettings = async (draft: AppSettings) => {
     const saved = await native.saveSettings(draft);
     setSettings(saved);
     document.documentElement.dataset.theme = saved.general.theme;
+    contextManager.current.setAiContextualization(saved.privacy.aiContextualization);
     if (!saved.screen.enabled) clearScreen();
     await refreshNativeStatus();
   };
@@ -304,21 +358,24 @@ function App() {
         <Tab active={view === "settings"} onClick={() => setView("settings")} icon={<Settings2 className="h-3.5 w-3.5" />} label="Settings" />
       </nav>
       {view === "assistant" && (
-        <Chat
-          question={question}
-          answer={answer}
-          history={history}
-          generating={generating}
-          smartMode={smartMode}
-          onQuestionChange={setQuestion}
-          onGenerate={() => generate()}
-          onStop={stopGeneration}
-          onClear={clear}
-          onAssistScreen={assistScreen}
-          onSolveCode={solveCode}
-          onWhatShouldISay={whatShouldISay}
-          onToggleSmartMode={() => setSmartMode(!smartMode)}
-        />
+        <>
+          <WorkingContextIndicator context={activeWindowState.pinned || activeWindowState.current} pinned={Boolean(activeWindowState.pinned)} unavailableReason={activeWindowState.unavailableReason} onTogglePin={toggleWorkingContextPin} onClearHistory={clearWorkingContextHistory} />
+          <Chat
+            question={question}
+            answer={answer}
+            history={history}
+            generating={generating}
+            smartMode={smartMode}
+            onQuestionChange={setQuestion}
+            onGenerate={() => generate()}
+            onStop={stopGeneration}
+            onClear={clear}
+            onAssistScreen={assistScreen}
+            onSolveCode={solveCode}
+            onWhatShouldISay={whatShouldISay}
+            onToggleSmartMode={() => setSmartMode(!smartMode)}
+          />
+        </>
       )}
       {view === "context" && <section className="min-h-0 flex-1 overflow-y-auto space-y-3 px-4 pb-4 pt-3"><div className="rounded-xl border border-zinc-800 bg-zinc-950/45 px-3 py-2"><p className="mb-1 text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-500">Privacy indicators</p><div className="flex flex-wrap gap-x-4 gap-y-1"><StatusIndicator label={listening ? "Mic on" : "Mic off"} tone={listening ? "active" : "offline"} /><StatusIndicator label={settings.screen.enabled ? "Screen context on" : "Screen context off"} tone={settings.screen.enabled ? "active" : "offline"} /><StatusIndicator label={`Screen-share: ${screenShareLabel}`} tone={screenShareTone} /><StatusIndicator label={aiStatusLabel} tone={aiStatusTone} /></div></div><Transcript listening={listening} paused={paused} partial={partial} transcript={transcript} autoMode={autoMode} error={audioError} onStart={startListening} onStop={stopListening} onPause={pauseListening} onResume={resumeListening} onAutoMode={setAutoMode} /><ContextPanel screenEnabled={settings.screen.enabled} screenContext={screenContext} capturing={capturing} onCapture={() => captureScreen()} onClear={clearScreen} /><p className="flex items-start gap-1.5 px-1 text-[10px] leading-4 text-zinc-500"><CircleHelp className="mt-0.5 h-3 w-3 shrink-0" />Automatic mode only responds to likely questions and can be turned off anytime. Audio and screenshots are discarded by default.</p></section>}
       {view === "settings" && <Settings settings={settings} audioDevices={audioDevices} providerStatus={providerStatus} captureStatus={captureStatus} onSave={saveSettings} onSaveKey={saveKey} onDeleteKey={deleteKey} onCaptureExclusionChange={setCaptureExclusion} onRunCapturePrivacyTest={runCapturePrivacyTest} onHealthCheck={testProviderConnection} />}

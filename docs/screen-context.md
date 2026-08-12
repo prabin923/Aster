@@ -10,6 +10,8 @@ Screen context is disabled by default. When enabled, Aster captures only after t
 
 The current MVP cannot reliably inspect the foreground application's private title across all operating systems, so it labels the source as **User-approved screen capture** instead of guessing. The screen-derived context can be cleared immediately and is never persisted as an image.
 
+When active-window metadata is available, a user-approved OCR capture is tagged with that application's identifier, window title, and capture timestamp. On an unpinned application switch, Aster clears cached OCR that belongs to the earlier app before it can be presented as the new app's context. Screen context remains on-demand: changing applications does not capture a frame or upload anything.
+
 If local OCR language data has not been cached, Tesseract may download language assets on first use. That does not upload the captured frame. This behavior should be replaced with bundled language data before a fully offline packaged release.
 
 ## Screen sharing is separate

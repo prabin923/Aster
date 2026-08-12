@@ -1,3 +1,4 @@
+mod active_window;
 mod capture_policy;
 mod models;
 mod providers;
@@ -5,6 +6,7 @@ mod security;
 mod speech;
 mod store;
 
+use active_window::{ActiveWindow, WindowBounds};
 use capture_policy::{CaptureCapability, CapturePrivacyTest, CaptureStatus};
 use models::{AiStreamEvent, AppSettings, GenerationRequest, ProviderStatus};
 use std::collections::{HashMap, HashSet};
@@ -16,6 +18,7 @@ const EXPANDED_MIN_WIDTH: u32 = 390;
 const EXPANDED_MIN_HEIGHT: u32 = 520;
 const COLLAPSED_MIN_WIDTH: u32 = 280;
 const COLLAPSED_HEIGHT: u32 = 64;
+const ACTIVE_WINDOW_EVENT: &str = "aster://active-window";
 
 #[derive(Default)]
 struct OverlayWindowState {
@@ -74,6 +77,24 @@ fn apply_window_settings(app: &AppHandle, settings: &AppSettings) -> CaptureStat
         platform: std::env::consts::OS.to_string(),
         message: "Capture exclusion is not supported because the native overlay window is unavailable.".to_string(),
     })
+}
+
+fn follow_anchor(overlay_width: i32, overlay_height: i32, window_bounds: &WindowBounds, monitor_work_area: tauri::PhysicalRect<i32, u32>) -> PhysicalPosition<i32> {
+    let margin = 10_i32;
+    let window_right = (window_bounds.x + window_bounds.width).ceil() as i32;
+    let window_top = window_bounds.y.ceil() as i32;
+    let work_left = monitor_work_area.position.x;
+    let work_top = monitor_work_area.position.y;
+    let work_right = work_left + monitor_work_area.size.width as i32;
+    let work_bottom = work_top + monitor_work_area.size.height as i32;
+
+    let desired_x = (window_right - overlay_width - margin).max(window_bounds.x.ceil() as i32);
+    let desired_y = (window_top + margin).max(work_top);
+
+    let final_x = desired_x.max(work_left).min(work_right - overlay_width);
+    let final_y = desired_y.min(work_bottom - overlay_height);
+
+    PhysicalPosition::new(final_x, final_y)
 }
 
 fn apply_window_position(window: &tauri::WebviewWindow, position: &str) {
@@ -209,17 +230,6 @@ async fn health_check(state: State<'_, AppState>) -> Result<ProviderStatus, Stri
 }
 
 #[tauri::command]
-fn get_capture_capability(state: State<'_, AppState>) -> CaptureCapability {
-    state.capture_status.lock().map(|status| status.capability.clone()).unwrap_or(CaptureCapability {
-        supported: false,
-        mode: capture_policy::CaptureMode::Unsupported,
-        enabled: false,
-        platform: std::env::consts::OS.to_string(),
-        message: "Capture exclusion is not supported because its status is unavailable.".to_string(),
-    })
-}
-
-#[tauri::command]
 fn get_capture_status(state: State<'_, AppState>) -> CaptureStatus {
     state.capture_status.lock().map(|status| status.clone()).unwrap_or_else(|_| capture_policy::capture_status(CaptureCapability {
         supported: false,
@@ -231,13 +241,29 @@ fn get_capture_status(state: State<'_, AppState>) -> CaptureStatus {
 }
 
 #[tauri::command]
-fn is_capture_exclusion_supported() -> bool {
-    capture_policy::is_capture_exclusion_supported()
+fn get_active_window() -> ActiveWindow {
+    active_window::get_active_window()
 }
 
-#[tauri::command]
-fn get_native_speech_capability() -> speech::NativeSpeechCapability {
-    speech::capability()
+/// One lightweight native poller (200ms) supplies the renderer with only
+/// meaningful focused-window metadata changes. This avoids a renderer IPC loop
+/// and never triggers screen capture or AI generation.
+fn start_active_window_monitor(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_millis(200));
+        let mut previous: Option<ActiveWindow> = None;
+        loop {
+            interval.tick().await;
+            let next = match tauri::async_runtime::spawn_blocking(active_window::get_active_window).await {
+                Ok(snapshot) => snapshot,
+                Err(_) => continue,
+            };
+            if previous.as_ref() != Some(&next) {
+                let _ = app.emit(ACTIVE_WINDOW_EVENT, next.clone());
+                previous = Some(next);
+            }
+        }
+    });
 }
 
 #[tauri::command]
@@ -304,6 +330,27 @@ fn minimize_overlay_window(app: AppHandle) -> Result<(), String> {
 fn close_overlay_window(app: AppHandle) -> Result<(), String> {
     let window = app.get_webview_window("main").ok_or_else(|| "Overlay window is unavailable.".to_string())?;
     window.close().map_err(|_| "Aster could not close.".to_string())
+}
+
+#[tauri::command]
+fn follow_active_window(app: AppHandle, bounds: WindowBounds) -> Result<(), String> {
+    let window = app.get_webview_window("main").ok_or_else(|| "Overlay window is unavailable.".to_string())?;
+    let size = window.outer_size().map_err(|_| "Unable to read Aster's size.".to_string())?;
+    let current_monitor = window.current_monitor().ok().flatten();
+    let monitors = window.available_monitors().map_err(|_| "Unable to read connected displays.".to_string())?;
+
+    let target_monitor = monitors.iter()
+        .find(|m| {
+            let area = m.work_area();
+            bounds.x >= area.position.x as f64 && bounds.x < (area.position.x + area.size.width as i32) as f64 &&
+            bounds.y >= area.position.y as f64 && bounds.y < (area.position.y + area.size.height as i32) as f64
+        })
+        .or_else(|| current_monitor.as_ref())
+        .ok_or_else(|| "Unable to find monitor for focused window.".to_string())?;
+
+    let work_area = *target_monitor.work_area();
+    let position = follow_anchor(size.width as i32, size.height as i32, &bounds, work_area);
+    window.set_position(position).map_err(|_| "Unable to reposition Aster.".to_string())
 }
 
 #[tauri::command]
@@ -374,15 +421,6 @@ fn move_overlay_to_next_display(app: AppHandle) -> Result<OverlayDisplayMove, St
 }
 
 #[tauri::command]
-fn follow_overlay_cursor_display(app: AppHandle) -> Result<bool, String> {
-    let window = app.get_webview_window("main").ok_or_else(|| "Overlay window is unavailable.".to_string())?;
-    if !window.is_visible().map_err(|_| "Unable to read Aster's visibility.".to_string())? {
-        return Ok(false);
-    }
-    Ok(capture_policy::follow_cursor_to_screen(&window))
-}
-
-#[tauri::command]
 async fn start_generation(app: AppHandle, state: State<'_, AppState>, request: GenerationRequest) -> Result<(), String> {
     if request.context.current_question.trim().is_empty() {
         return Err("Add a question before requesting an answer.".to_string());
@@ -421,8 +459,6 @@ fn cancel_generation(state: State<'_, AppState>, request_id: String) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::default().build())
         .setup(|app| {
             let settings = store::load_settings(&app.handle());
@@ -435,6 +471,7 @@ pub fn run() {
                 cancelled: Arc::new(Mutex::new(HashSet::new())),
                 recent_requests: Mutex::new(HashMap::new()),
             });
+            start_active_window_monitor(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -444,10 +481,8 @@ pub fn run() {
             delete_provider_key,
             provider_status,
             health_check,
-            get_capture_capability,
             get_capture_status,
-            is_capture_exclusion_supported,
-            get_native_speech_capability,
+            get_active_window,
             start_native_speech,
             stop_native_speech,
             set_capture_exclusion,
@@ -455,10 +490,10 @@ pub fn run() {
             toggle_overlay,
             toggle_overlay_collapse,
             move_overlay_to_next_display,
-            follow_overlay_cursor_display,
             start_window_drag,
             minimize_overlay_window,
             close_overlay_window,
+            follow_active_window,
             start_generation,
             cancel_generation
         ])
@@ -468,12 +503,34 @@ pub fn run() {
 
 #[cfg(test)]
 mod overlay_window_tests {
-    use super::{COLLAPSED_HEIGHT, COLLAPSED_MIN_WIDTH, EXPANDED_MIN_HEIGHT, EXPANDED_MIN_WIDTH};
+    use super::{follow_anchor, COLLAPSED_HEIGHT, COLLAPSED_MIN_WIDTH, EXPANDED_MIN_HEIGHT, EXPANDED_MIN_WIDTH};
+    use crate::active_window::WindowBounds;
+    use tauri::PhysicalRect;
 
     #[test]
     fn compact_window_dimensions_preserve_a_usable_drag_handle() {
         assert!(COLLAPSED_HEIGHT >= 60);
         assert!(COLLAPSED_MIN_WIDTH < EXPANDED_MIN_WIDTH);
         assert!(COLLAPSED_HEIGHT < EXPANDED_MIN_HEIGHT);
+    }
+
+    #[test]
+    fn follow_anchor_places_overlay_top_right_inside_window() {
+        let bounds = WindowBounds { x: 100.0, y: 100.0, width: 800.0, height: 600.0 };
+        let work_area = PhysicalRect { position: tauri::PhysicalPosition::new(0, 0), size: tauri::PhysicalSize::new(1920, 1080) };
+        let pos = follow_anchor(300, 400, &bounds, work_area);
+        assert!(pos.x > 100 && pos.x < 900);
+        assert!(pos.y >= 110);
+    }
+
+    #[test]
+    fn follow_anchor_clamps_overlay_to_work_area() {
+        let bounds = WindowBounds { x: 1700.0, y: 50.0, width: 200.0, height: 200.0 };
+        let work_area = PhysicalRect { position: tauri::PhysicalPosition::new(0, 0), size: tauri::PhysicalSize::new(1920, 1080) };
+        let pos = follow_anchor(300, 400, &bounds, work_area);
+        assert!(pos.x >= 0);
+        assert!(pos.x + 300 <= 1920);
+        assert!(pos.y >= 0);
+        assert!(pos.y + 400 <= 1080);
     }
 }

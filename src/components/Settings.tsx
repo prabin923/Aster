@@ -70,6 +70,7 @@ export function Settings({ settings, audioDevices, providerStatus, captureStatus
           <Field label="Theme"><select value={draft.general.theme} onChange={(event) => updateNested("general", { ...draft.general, theme: event.target.value as AppSettings["general"]["theme"] })}><option value="dark">Dark</option><option value="light">Light</option><option value="system">System</option></select></Field>
           <Field label={`Overlay opacity — ${Math.round(draft.general.overlayOpacity * 100)}%`}><input value={draft.general.overlayOpacity} onChange={(event) => updateNested("general", { ...draft.general, overlayOpacity: Number(event.target.value) })} min="0.55" max="1" step="0.01" type="range" /></Field>
           <Toggle label="Always on top" checked={draft.general.alwaysOnTop} onChange={(alwaysOnTop) => updateNested("general", { ...draft.general, alwaysOnTop })} />
+          <Toggle label="Follow active window" checked={draft.general.followActiveWindow} onChange={(followActiveWindow) => updateNested("general", { ...draft.general, followActiveWindow })} />
           <Field label="Overlay position"><select value={draft.general.position} onChange={(event) => updateNested("general", { ...draft.general, position: event.target.value })}><option value="top-right">Top right</option><option value="top-left">Top left</option><option value="bottom-right">Bottom right</option><option value="bottom-left">Bottom left</option><option value="center">Center</option></select></Field>
           <Field label="Primary shortcut"><input value={draft.general.shortcut} onChange={(event) => updateNested("general", { ...draft.general, shortcut: event.target.value })} /></Field>
         </SettingsCard>
@@ -106,8 +107,9 @@ export function Settings({ settings, audioDevices, providerStatus, captureStatus
         </SettingsCard>
         <SettingsCard title="Privacy">
           <Toggle label="Conversation history" checked={draft.privacy.conversationHistory} onChange={(conversationHistory) => updateNested("privacy", { ...draft.privacy, conversationHistory })} />
+          <Toggle label="Use active-window metadata in AI requests" checked={draft.privacy.aiContextualization} onChange={(aiContextualization) => updateNested("privacy", { ...draft.privacy, aiContextualization })} />
           <Toggle label="Telemetry" checked={draft.privacy.telemetry} onChange={(telemetry) => updateNested("privacy", { ...draft.privacy, telemetry })} />
-          <p className="flex gap-1.5 text-[10px] leading-4 text-zinc-500"><ShieldCheck className="mt-0.5 h-3 w-3 shrink-0 text-emerald-400" />Raw audio and screenshots are never persisted by Aster. Telemetry is off by default and never includes prompts, transcripts, screenshots, or keys.</p>
+          <p className="flex gap-1.5 text-[10px] leading-4 text-zinc-500"><ShieldCheck className="mt-0.5 h-3 w-3 shrink-0 text-emerald-400" />Active-window details stay local unless this toggle is enabled. Raw audio and screenshots are never persisted; telemetry is off by default and never includes prompts, transcripts, screenshots, or keys.</p>
         </SettingsCard>
       </div>
       <button onClick={save} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-500 py-2.5 text-sm font-semibold text-white hover:bg-violet-400"><Save className="h-4 w-4" /> Save settings</button>

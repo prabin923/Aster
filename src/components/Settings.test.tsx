@@ -92,4 +92,10 @@ describe("Overlay privacy settings", () => {
     fireEvent.click(screen.getByRole("button", { name: "Store" }));
     expect(await screen.findByText("Could not store API key: Keychain access was denied")).toBeTruthy();
   });
+
+  it("keeps active-window AI contextualization opt-in", () => {
+    renderSettings(macosCapability);
+    const toggle = screen.getByLabelText("Use active-window metadata in AI requests") as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+  });
 });

@@ -20,6 +20,7 @@ impl Default for AppSettings {
                 position: "top-right".into(),
                 shortcut: "CommandOrControl+Space".into(),
                 screen_share_exclusion: crate::capture_policy::default_enabled(),
+                follow_active_window: true,
             },
             audio: AudioSettings {
                 input_device: "default".into(),
@@ -42,6 +43,7 @@ impl Default for AppSettings {
             },
             privacy: PrivacySettings {
                 conversation_history: false,
+                ai_contextualization: false,
                 telemetry: false,
             },
         }
@@ -57,6 +59,7 @@ pub struct GeneralSettings {
     pub position: String,
     pub shortcut: String,
     pub screen_share_exclusion: bool,
+    pub follow_active_window: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -91,6 +94,8 @@ pub struct AiSettings {
 #[serde(rename_all = "camelCase")]
 pub struct PrivacySettings {
     pub conversation_history: bool,
+    #[serde(default)]
+    pub ai_contextualization: bool,
     pub telemetry: bool,
 }
 
@@ -102,15 +107,59 @@ pub struct StructuredContext {
     pub conversation_summary: String,
     pub screen_context: ScreenContext,
     pub task_context: String,
+    #[serde(default)]
+    pub working_context: Option<WorkingContext>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ScreenContext {
     pub application: String,
+    #[serde(default)]
+    pub application_id: String,
     pub window_title: String,
     pub visible_text: String,
     pub detected_topics: Vec<String>,
+    #[serde(default)]
+    pub captured_at: Option<i64>,
+    #[serde(default)]
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkingContext {
+    pub application: WorkingApplication,
+    pub window: WorkingWindow,
+    pub timestamp: i64,
+    pub source: String,
+    pub display_id: String,
+    #[serde(default)]
+    pub bounds: Option<WorkingBounds>,
+    #[serde(default)]
+    pub limited: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkingApplication {
+    pub name: String,
+    pub identifier: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkingWindow {
+    pub title: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkingBounds {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -30,4 +30,31 @@ describe("ContextManager", () => {
     expect(context.conversationSummary).toContain("First long transcript");
     expect(context.recentTranscript.length).toBeLessThan(2);
   });
+
+  it("invalidates OCR from a previous application and keeps active-window metadata out of AI by default", () => {
+    const manager = new ContextManager();
+    const vsCode = {
+      application: { name: "VS Code", identifier: "com.microsoft.VSCode" },
+      window: { title: "route.ts" },
+      timestamp: 1,
+      source: "active_window" as const,
+      displayId: "display:1",
+    };
+    const chrome = {
+      application: { name: "Google Chrome", identifier: "com.google.Chrome" },
+      window: { title: "GitHub" },
+      timestamp: 2,
+      source: "active_window" as const,
+      displayId: "display:1",
+    };
+    manager.setWorkingContext(vsCode);
+    manager.setScreenContext({ application: "VS Code", applicationId: "com.microsoft.VSCode", windowTitle: "route.ts", visibleText: "const answer = 42", detectedTopics: [] });
+
+    expect(manager.setWorkingContext(chrome)).toBe(true);
+    expect(manager.build("What does this do?").screenContext.visibleText).toBe("");
+    expect(manager.build("What does this do?").workingContext).toBeNull();
+
+    manager.setAiContextualization(true);
+    expect(manager.build("What does this do?").workingContext?.application.name).toBe("Google Chrome");
+  });
 });

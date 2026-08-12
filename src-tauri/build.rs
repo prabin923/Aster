@@ -2,8 +2,46 @@ use std::{env, path::PathBuf, process::Command};
 
 fn main() {
     build_macos_capture_helper();
+    build_macos_active_window_helper();
     build_macos_speech_helper();
     tauri_build::build()
+}
+
+fn build_macos_active_window_helper() {
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
+        return;
+    }
+
+    let source = PathBuf::from("src/active_window/macos_active_window.m");
+    println!("cargo:rerun-if-changed={}", source.display());
+    let output = PathBuf::from(env::var("OUT_DIR").expect("Cargo should set OUT_DIR"));
+    let object = output.join("macos_active_window.o");
+    let library = output.join("libaster_macos_active_window.a");
+
+    let compile_status = Command::new("xcrun")
+        .args([
+            "clang", "-fobjc-arc", "-fblocks", "-c",
+            source.to_str().expect("valid source path"), "-o",
+            object.to_str().expect("valid object path"),
+        ])
+        .status()
+        .expect("Xcode Command Line Tools are required to build the macOS active-window helper");
+    assert!(compile_status.success(), "Unable to compile the macOS active-window helper");
+
+    let archive_status = Command::new("xcrun")
+        .args([
+            "libtool", "-static", "-o", library.to_str().expect("valid library path"),
+            object.to_str().expect("valid object path"),
+        ])
+        .status()
+        .expect("Xcode Command Line Tools are required to archive the macOS active-window helper");
+    assert!(archive_status.success(), "Unable to archive the macOS active-window helper");
+
+    println!("cargo:rustc-link-search=native={}", output.display());
+    println!("cargo:rustc-link-lib=static=aster_macos_active_window");
+    for framework in ["ApplicationServices", "AppKit", "CoreGraphics", "Foundation"] {
+        println!("cargo:rustc-link-lib=framework={framework}");
+    }
 }
 
 fn build_macos_capture_helper() {

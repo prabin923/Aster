@@ -7,7 +7,6 @@ pub fn mode() -> CaptureMode { CaptureMode::Unsupported }
 pub fn is_capture_exclusion_supported() -> bool { false }
 pub fn requires_overlay_marker() -> bool { false }
 pub fn setup_window_behavior(_window: &WebviewWindow) {}
-pub fn follow_cursor_to_screen(_window: &WebviewWindow) -> bool { false }
 pub fn app_owned_stream_status() -> Option<AppOwnedStreamStatus> { None }
 
 pub fn capability_message() -> String {

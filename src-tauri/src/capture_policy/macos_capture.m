@@ -294,7 +294,7 @@ typedef struct {
   double y;
 } AsterPoint;
 
-static __weak NSWindow *aster_cursor_follow_window = nil;
+static __unsafe_unretained NSWindow *aster_cursor_follow_window = nil;
 static id aster_global_cursor_monitor = nil;
 static id aster_local_cursor_monitor = nil;
 static id aster_workspace_activation_observer = nil;
@@ -377,27 +377,29 @@ static BOOL aster_screens_match(NSScreen *first, NSScreen *second) {
 }
 
 static int aster_move_follow_window_to_screen(NSWindow *window, NSScreen *targetScreen) {
-  if (window == nil || !window.isVisible || targetScreen == nil) return 0;
+  if (window == nil || targetScreen == nil) return 0;
   if (window.level != NSStatusWindowLevel) [window setLevel:NSStatusWindowLevel];
 
   NSScreen *currentScreen = window.screen;
   if (currentScreen == nil) currentScreen = [NSScreen mainScreen];
-  if ([currentScreen isEqual:targetScreen]) return 0;
 
-  NSRect currentVisible = currentScreen.visibleFrame;
-  NSRect windowFrame = window.frame;
-  double spanX = currentVisible.size.width - windowFrame.size.width;
-  double spanY = currentVisible.size.height - windowFrame.size.height;
-  double relX = (spanX > 1.0) ? (windowFrame.origin.x - currentVisible.origin.x) / spanX : 0.0;
-  double relY = (spanY > 1.0) ? (windowFrame.origin.y - currentVisible.origin.y) / spanY : 0.0;
-  relX = fmax(0.0, fmin(1.0, relX));
-  relY = fmax(0.0, fmin(1.0, relY));
+  if (![currentScreen isEqual:targetScreen]) {
+    NSRect currentVisible = currentScreen.visibleFrame;
+    NSRect windowFrame = window.frame;
+    double spanX = currentVisible.size.width - windowFrame.size.width;
+    double spanY = currentVisible.size.height - windowFrame.size.height;
+    double relX = (spanX > 1.0) ? (windowFrame.origin.x - currentVisible.origin.x) / spanX : 0.0;
+    double relY = (spanY > 1.0) ? (windowFrame.origin.y - currentVisible.origin.y) / spanY : 0.0;
+    relX = fmax(0.0, fmin(1.0, relX));
+    relY = fmax(0.0, fmin(1.0, relY));
 
-  NSRect targetVisible = targetScreen.visibleFrame;
-  double targetSpanX = fmax(0.0, targetVisible.size.width - windowFrame.size.width);
-  double targetSpanY = fmax(0.0, targetVisible.size.height - windowFrame.size.height);
-  [window setFrameOrigin:NSMakePoint(targetVisible.origin.x + relX * targetSpanX,
-                                      targetVisible.origin.y + relY * targetSpanY)];
+    NSRect targetVisible = targetScreen.visibleFrame;
+    double targetSpanX = fmax(0.0, targetVisible.size.width - windowFrame.size.width);
+    double targetSpanY = fmax(0.0, targetVisible.size.height - windowFrame.size.height);
+    [window setFrameOrigin:NSMakePoint(targetVisible.origin.x + relX * targetSpanX,
+                                        targetVisible.origin.y + relY * targetSpanY)];
+  }
+
   [window orderFrontRegardless];
   return 1;
 }
@@ -479,19 +481,4 @@ void aster_start_cursor_following(void *ns_window) {
   };
   if (NSThread.isMainThread) block();
   else dispatch_async(dispatch_get_main_queue(), block);
-}
-
-/// Fallback for the Tauri command and diagnostics. The native activation
-/// observer and timer normally keep the overlay on the active window's screen;
-/// the cursor screen is used only when macOS has no normal active-app window.
-int aster_follow_cursor_to_screen(void *ns_window) {
-  if (ns_window == NULL) return 0;
-  __block int moved = 0;
-  void (^block)(void) = ^{
-    aster_cursor_follow_window = (__bridge NSWindow *)ns_window;
-    moved = aster_follow_active_window_display();
-  };
-  if (NSThread.isMainThread) block();
-  else dispatch_sync(dispatch_get_main_queue(), block);
-  return moved;
 }

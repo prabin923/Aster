@@ -22,7 +22,6 @@ unsafe extern "C" {
     fn aster_get_ns_window_sharing_type(ns_window: *mut c_void) -> i32;
     fn aster_setup_macos_window_behavior(ns_window: *mut c_void);
     fn aster_start_cursor_following(ns_window: *mut c_void);
-    fn aster_follow_cursor_to_screen(ns_window: *mut c_void) -> i32;
 }
 
 pub fn name() -> &'static str { "macOS" }
@@ -36,17 +35,6 @@ pub fn setup_window_behavior(window: &WebviewWindow) {
             aster_setup_macos_window_behavior(ns_window);
             aster_start_cursor_following(ns_window);
         }
-    }
-}
-
-/// Moves the overlay to the display of the front application's active window,
-/// falling back to the cursor display if macOS has no suitable normal window.
-/// Returns true only when the window's display changed.
-pub fn follow_cursor_to_screen(window: &WebviewWindow) -> bool {
-    if let Ok(ns_window) = window.ns_window() {
-        unsafe { aster_follow_cursor_to_screen(ns_window) == 1 }
-    } else {
-        false
     }
 }
 

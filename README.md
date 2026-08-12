@@ -7,6 +7,7 @@ It is deliberately not a covert tool: Aster does not hide its process, bypass se
 ## What works in this MVP
 
 - Frameless, draggable, resizable, always-on-top overlay with opacity, position, theme, collapse/minimize, configurable global shortcuts, a native one-click move-to-next-display action, and automatic multi-monitor following. On macOS, Aster follows the front app window's display (with cursor-display fallback), including keyboard-only app/window switches; it uses only window PID/layer/bounds in memory and never reads window content.
+- Native active-window context updates for the application the user is working in, with a visible **Working in** indicator, short previous-context buffer, application-history clear control, and optional context pinning. It tracks metadata only and never triggers an AI request on its own.
 - Streaming chat with Markdown, code blocks, stop, regenerate, copy, clear, and optional in-memory conversation history.
 - Mock AI that runs without a network connection, plus native OpenAI, Gemini, and Claude streaming adapters.
 - API keys go directly from the one-time settings input to native Keychain/Credential Manager/Secret Service storage; they are never returned to the renderer or saved in settings JSON.
@@ -70,6 +71,7 @@ docs/                architecture, privacy, providers, audio, screen, security, 
 - Screen OCR is local but Tesseract may obtain language assets on first use, depending on the runtime cache. The captured image itself is not uploaded by Aster.
 - Windows 10 version 2004+ can use and verify `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)` for Aster's top-level overlay. On macOS, Aster applies `NSWindowSharingNone` to its top-level native window. On macOS 12.3+, the optional **Capture Privacy Test** can verify a separate, Aster-owned ScreenCaptureKit stream created with the overlay excluded. Linux reports its detected session/desktop and remains unsupported unless a documented native implementation is added. None of these states mean universal recorder, monitoring, or proctoring invisibility.
 - This MVP does not yet include signed/notarized releases, automated update delivery, or a native loopback/system-audio capture pipeline.
+- macOS needs Accessibility permission for focused-window title, bounds, and display details. Without it, Aster can still show the front application as limited metadata but does not invent window details. Linux currently reports active-window context as unavailable until a documented desktop-specific implementation is added.
 
 ## Documentation
 
